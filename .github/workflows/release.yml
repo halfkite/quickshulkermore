@@ -122,6 +122,38 @@ jobs:
             fi
           done <<< "$existing_assets"
 
+  publish-modrinth:
+    name: Publish verified JARs to Modrinth
+    needs: [validate, package, publish-github]
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test release packaging and Modrinth publishing
+        run: python -m unittest discover -s scripts/python -p 'test_*.py'
+      - uses: actions/download-artifact@v4
+        with:
+          name: quickshulkermore-release-package-${{ needs.validate.outputs.tag }}
+          path: release-assets
+      - name: Publish each supported Minecraft range and verify uploaded files
+        shell: bash
+        env:
+          MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
+          MODRINTH_PROJECT_ID: GTAQipTs
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > "$RUNNER_TEMP/release.json"
+          python -c 'import json, pathlib, sys; r=json.loads(pathlib.Path(sys.argv[1]).read_text()); pathlib.Path(sys.argv[2]).write_bytes(r["body"].encode("utf-8"))' \
+            "$RUNNER_TEMP/release.json" "$RUNNER_TEMP/release-notes.md"
+          python scripts/python/publish_modrinth.py \
+            --artifact-dir release-assets \
+            --project-id "$MODRINTH_PROJECT_ID" \
+            --changelog-file "$RUNNER_TEMP/release-notes.md"
+
   upload-123pan:
     name: Upload verified JARs to 123pan
     needs: [validate, package, publish-github]
