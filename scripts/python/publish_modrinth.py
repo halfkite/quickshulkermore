@@ -67,13 +67,12 @@ def release_plan(directory, project_id, changelog):
             if dependency not in DEPENDENCIES:
                 raise ArtifactError(f"No Modrinth mapping for required dependency: {dependency}")
             dependencies.append({"project_id": DEPENDENCIES[dependency], "dependency_type": "required"})
-        game_range = "-".join(dict.fromkeys((entry["minecraft_versions"][0], entry["minecraft_versions"][-1])))
-        number = f"{manifest['version']}+mc{game_range}-fabric"
+        number = manifest["version"]
         if len(number) > 32:
             raise ArtifactError(f"Modrinth version number exceeds 32 characters: {number}")
         plans.append((path, {
             "project_id": project_id,
-            "name": f"{manifest['version']} · Minecraft {game_range} · Fabric",
+            "name": number,
             "version_number": number,
             "changelog": changelog,
             "dependencies": dependencies,
@@ -130,7 +129,12 @@ def publish(plans, token):
     # Preflight every existing version before creating anything. Re-running after
     # a partial upload is safe; differing files or metadata require intervention.
     for path, payload in plans:
-        matches = [v for v in existing if v["version_number"] == payload["version_number"]]
+        # Modrinth permits the same mod version for different game targets.
+        # Use compatibility metadata to identify the exact upload on reruns.
+        matches = [v for v in existing
+                   if v["version_number"] == payload["version_number"]
+                   and sorted(v.get("game_versions", [])) == sorted(payload["game_versions"])
+                   and sorted(v.get("loaders", [])) == sorted(payload["loaders"])]
         if len(matches) > 1:
             raise ArtifactError(f"Duplicate remote version: {payload['version_number']}")
         if matches:

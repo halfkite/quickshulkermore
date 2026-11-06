@@ -45,7 +45,8 @@ class ModrinthPublishingTests(unittest.TestCase):
         _, payload = self.plan()[0]
         self.assertEqual(payload["game_versions"], ["26.1", "26.1.1", "26.1.2"])
         self.assertEqual(payload["changelog"], self.notes)
-        self.assertEqual(payload["version_number"], "1.0.2+mc26.1-26.1.2-fabric")
+        self.assertEqual(payload["version_number"], "1.0.2")
+        self.assertEqual(payload["name"], "1.0.2")
         self.assertEqual(payload["dependencies"], [{"project_id": "P7dR8mSH", "dependency_type": "required"}])
 
     def test_corrupt_jar_is_rejected_before_upload(self):
@@ -103,6 +104,30 @@ class ModrinthPublishingTests(unittest.TestCase):
             publish(plans, "not-a-real-token")
         self.assertEqual(api.call_args_list[3].args[0], "/version")
         self.assertEqual(api.call_args_list[4].args[0], "/version/new-version")
+
+    def test_same_version_other_game_range_is_not_a_duplicate(self):
+        plans = self.plan()
+        other = self.remote(plans[0][1])
+        other["game_versions"] = ["26.3"]
+        with patch("publish_modrinth.request", side_effect=[
+            {"slug": "quickshulkermore", "status": "draft"},
+            [{"version": v} for v in plans[0][1]["game_versions"]], [other],
+            {"id": "new-version"}, self.remote(plans[0][1]),
+        ]) as api:
+            publish(plans, "not-a-real-token")
+        self.assertEqual(api.call_count, 5)
+
+    def test_same_version_other_loader_is_not_a_duplicate(self):
+        plans = self.plan()
+        other = self.remote(plans[0][1])
+        other["loaders"] = ["neoforge"]
+        with patch("publish_modrinth.request", side_effect=[
+            {"slug": "quickshulkermore", "status": "draft"},
+            [{"version": v} for v in plans[0][1]["game_versions"]],
+            [other, self.remote(plans[0][1])],
+        ]) as api:
+            publish(plans, "not-a-real-token")
+        self.assertEqual(api.call_count, 3)
 
     def test_multipart_preserves_utf8_and_binary(self):
         path, payload = self.plan()[0]
